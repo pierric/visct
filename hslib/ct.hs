@@ -1,81 +1,11 @@
-import Data.List(intersperse)
 import Data.Maybe(fromJust)
-import Trans
-import Reader
-import Writer
-import State
+import Vis
 import CartesionTree
 
-type Addr   = Int
-type Length = Int
-data Value = V {
-    _leftWidth, _rightWidth :: Int,
-    _x, _y :: Int,
-    _id :: Int,
-    _addr :: Addr,
-    _len  :: Length
-} deriving Show
-type Heap = CartesionTree Value
-type HeapZipper = Zipper  Value
-
-getAddr n = case viewf n of 
-              Leaf -> fail "address of leaf"
-              Node v _ _ -> return $ _addr v
-getLen  n = case viewf n of
-              Leaf -> fail "length of leaf"
-              Node v _ _ -> return $ _len v
-
-
-newtype Color = Color PackedString
-data VConfig = C {
-  _root_x,  _root_y  :: Int,
-  _hookl_x, _hookl_y :: Int,
-  _hookr_x, _hookr_y :: Int,
-  _width_delta, _height_delta :: Int,
-  _foreground_color, _background_color :: PackedString,
-  _link_color, _highlight_color_0, _highlight_color_1, _highlight_color_2 :: PackedString
-}
-type VState = Int
-
-data Command = CreateCircle Int Addr Length Int Int     -- graphicId value xpos ypos
-             | SetForegroundColor Int Color             -- graphicId color
-             | SetBackgroundColor Int Color             -- graphicId color
-             | SetHighlight Int Int                     -- graphicId enabled
-             | SetText Int String                       -- index string
-             | Connect Int Int Color                    -- fromGraphicId toGraphicId color
-             | Disconnect Int Int                       -- fromGraphicId toGraphicId
-             | CreateHighlightCircle Int Color Int Int  -- graphicId color xpos ypos
-             | Move Int Int Int                         -- graphicId xpos ypos
-             | Delete Int                               -- graphicId
-             | CreateLabel Int String Int Int           -- graphicId text xpos ypos
-             | Step
-
-type Vis = WriterT [Command] (StateT VState (Reader VConfig))
-runVis :: (VState, VConfig) -> Vis a -> (a, VState, [Command])
-runVis (is, ic) act = let ((a,w),s) = runReader (runStateT (runWriterT act) is) ic
-                      in (a,s,w)
-
-root_x, root_y, hookl_x, hookl_y, hookr_x, hookr_y, width_delta, height_delta :: Vis Int
-root_x            = (lift . lift) (asks _root_x)
-root_y            = (lift . lift) (asks _root_y)
-hookl_x           = (lift . lift) (asks _hookl_x)
-hookl_y           = (lift . lift) (asks _hookl_y)
-hookr_x           = (lift . lift) (asks _hookr_x)
-hookr_y           = (lift . lift) (asks _hookr_y)
-width_delta       = (lift . lift) (asks _width_delta)
-height_delta      = (lift . lift) (asks _height_delta)
-
-foreground_color, background_color, link_color, highlight_color_0, highlight_color_1, highlight_color_2 :: Vis Color
-foreground_color  = (lift . lift) (asks (Color . _foreground_color))
-background_color  = (lift . lift) (asks (Color . _background_color))
-link_color        = (lift . lift) (asks (Color . _link_color))
-highlight_color_0 = (lift . lift) (asks (Color . _highlight_color_0))
-highlight_color_1 = (lift . lift) (asks (Color . _highlight_color_1))
-highlight_color_2 = (lift . lift) (asks (Color . _highlight_color_2))
-
-hsFree piece tree is ic = runVis (is, ic) (do cid   <- vsCreateCircle piece 100 100
-                                              tree' <- fmap close $ attach cid piece (zipper tree)
-                                              updateTree tree')
+hsFree spiece tree is ic = runVis (is, ic) (do let piece = read (packedStringToString spiece) :: (Addr, Length)
+                                               cid   <- vsCreateCircle piece 100 100
+                                               tree' <- fmap close $ attach cid piece (zipper tree) >>= promote
+                                               updateTree tree')
 
 attach cid piece@(naddr, nlen) heap
     | nlen <= 0 = do vsPutText ("Invalid segment: " ++ show piece)
@@ -93,30 +23,30 @@ attach cid piece@(naddr, nlen) heap
           -- otherwise
           node@(Node value t1 t2)
             -- check overlap
-            | naddr <= _addr value && naddr + nlen > _addr value       -> do vsWithHighlightElem (_id value) (vsPutText "Overlapped." >> vsStep)
-                                                                             vsDelete cid
-                                                                             return heap
-            | _addr value <= naddr && _addr value + _len value > naddr -> do vsWithHighlightElem (_id value) (vsPutText "Overlapped." >> vsStep)
-                                                                             vsDelete cid
-                                                                             return heap
+            | naddr <= _addr value && naddr + nlen > _addr value       -> overlapped (_id value) cid
+            | _addr value <= naddr && _addr value + _len value > naddr -> overlapped (_id value) cid
             -- check neighbourhood
-            | naddr + nlen == _addr value       -> do vsWithHighlightElem (_id value) (vsPutText "Neighbour found." >> vsStep)
+            | naddr + nlen == _addr value       -> do let node  = Node (value{_addr = naddr, _len = nlen+_len value}) Leaf t2
+                                                          lribs = decomposeL t1
+
+                                                      vsWithHighlightElem (_id value) (vsPutText "Neighbour found." >> vsStep)
                                                       vsDelete cid
-                                                      let lribs = decomposeL t1
-                                                      let node  = Node (value{_addr = naddr, _len = nlen+_len value}) Leaf t2
                                                       vsSetText (_id value) (show (naddr, nlen + _len value))
                                                       whenNode t1 (\v -> vsDisconnect (_id value) (_id v))
                                                       vsCombineLeft node lribs
+
                                                       case combineLeft lribs node of
                                                         Nothing  -> return heap
                                                         Just new -> return $ setf new heap
-            | _addr value + _len value == naddr -> do vsWithHighlightElem (_id value) (vsPutText "Neighbour found." >> vsStep)
+            | _addr value + _len value == naddr -> do let node  = Node (value{_addr = _addr value, _len = _len value+nlen}) t1 Leaf
+                                                          rribs = decomposeR t2
+
+                                                      vsWithHighlightElem (_id value) (vsPutText "Neighbour found." >> vsStep)
                                                       vsDelete cid
-                                                      let rribs = decomposeR t2
-                                                      let node  = Node (value{_addr = _addr value, _len = _len value+nlen}) t1 Leaf
                                                       vsSetText (_id value) (show (_addr value, _len value + nlen))
                                                       whenNode t2 (\v -> vsDisconnect (_id value) (_id v))
                                                       vsCombineRight node rribs
+
                                                       case combineRight rribs node of
                                                         Nothing  -> return heap
                                                         Just new -> return $ setf new heap
@@ -133,38 +63,40 @@ attach cid piece@(naddr, nlen) heap
                                                 Leaf        -> vsPutText "Reaching a leaf."
                                                 Node tv _ _ -> vsMove hid (_x tv, _y tv)
                                           vsStep)
-                                      if naddr < _addr value then
+                                      if naddr < _addr value 
+                                        then
                                           attach cid piece (fromJust (left  heap))
-                                      else
+                                        else
                                           attach cid piece (fromJust (right heap))
             -- found an attach point
             | otherwise -> do let pid  = fmap (\ (Node v _ _) -> _id v) (up heap >>= (return . viewf))
                               whenJust pid (\ rpid -> vsDisconnect rpid (_id value) >> vsConnect rpid cid >> vsConnect cid (_id value) >> vsStep)
                               lpos     <- liftM2 (,) hookl_x hookl_y
                               rpos     <- liftM2 (,) hookr_x hookr_y
-                              (lt, rt) <- split node [] [] (Nothing, lpos, rpos)
+
+                              (lt, rt) <- split node [] [] (cid, lpos, rpos)
                               let root = Node (V undefined undefined (_x value) (_y value) cid naddr nlen) Leaf Leaf
+
                               vsMove cid (_x value, _y value)
                               vsStep
                               vsPutText "Combine Left"
                               vsCombineLeft  root lt
+
                               case combineLeft lt root of
-                                Nothing    -> return heap
-                                Just c1 -> do updated <- updateWidth c1 >>= (updatePosition' . fst)
-                                              animateNewPosition updated
-                                              vsStep
+                                Nothing -> return heap
+                                Just c1 -> do c1 <- updateTree' c1
                                               vsPutText "Combine Right"
-                                              vsCombineRight updated rt
-                                              case combineRight rt updated of
-                                                Nothing    -> return heap
-                                                Just root' -> return $ setf root' heap
+                                              vsCombineRight c1 rt
+                                              case combineRight rt c1 of
+                                                Nothing -> return heap
+                                                Just c2 -> return $ setf c2 heap
     where 
         split Leaf hookl hookr _  = return (hookl, hookr)
         split (Node v l r) hookl hookr (pid, lpos, rpos)
             = do wd  <- fmap (`div` 2) width_delta
                  hd  <- height_delta
                  rib <- vsWithHighlightElem (_id v) (do
-                          whenJust pid (\ rpid -> vsDisconnect rpid (_id v))
+                          vsDisconnect pid (_id v)
                           if _addr v < naddr 
                             then do
                               vsPutText (show (_addr v) ++ " < " ++ show naddr ++ ". Going to the right child.")
@@ -182,13 +114,12 @@ attach cid piece@(naddr, nlen) heap
                               updatePosition (Node v Leaf r) rpos 0)
                  animateNewPosition rib
                  vsStep
+
                  if _addr v < naddr 
                    then
-                     split r (rib:hookl) hookr (Just (_id v), lpos <+> (wd, hd), rpos)
+                     split r (rib:hookl) hookr (_id v, lpos <+> (wd, hd), rpos)
                    else
-                     split l hookl (rib:hookr) (Just (_id v), lpos, rpos <+> (-wd, hd))
-              where 
-              (x0,y0) <+> (x1,y1) = (x0+x1,y0+y1)
+                     split l hookl (rib:hookr) (_id v, lpos, rpos <+> (-wd, hd))
         
         decomposeL tree = go tree []
             where 
@@ -257,6 +188,173 @@ attach cid piece@(naddr, nlen) heap
                                                                     GT -> vsPutText "Overlapped." >> vsStep
                   go [] _ = vsStep
 
+        overlapped v c = do vsWithHighlightElem v (vsPutText "Overlapped." >> vsStep)
+                            vsDelete c
+                            return heap
+
+promote pos = case viewf pos of
+                Leaf -> do vsPutText "Reaching a leaf." 
+                           vsStep
+                           return pos
+                Node pivot _ _ -> vsPutText "" >> go pivot (root pos)
+    where
+        -- decent from root to pos, and find the first position p where p's length < pos's length
+        go pv cursor -- n@(Node cv lt rt)
+            = case viewf cursor of
+                Leaf -> return cursor
+                n@(Node cv lt rt)
+                  -- If we reach the pos, which means the node is at a right level
+                  | _addr cv == _addr pv && _len cv == _len pv -> do vsPutText "Promotion done."
+                                                                     vsStep
+                                                                     return pos
+                  -- Or the current ancester has a larger or equal length
+                  | _len cv >= _len pv -> do vsWithHighlightCircle (_x cv, _y cv) (\hid -> do
+                                             if _addr cv > _addr pv
+                                               then do 
+                                                 let Node lv _ _ = lt
+                                                 vsMove hid (_x lv, _y lv)
+                                               else do
+                                                 let Node rv _ _ = rt
+                                                 vsMove hid (_x rv, _y rv))
+                                             vsStep
+                                             if _addr cv > _addr pv
+                                               then go pv (fromJust $ left  cursor)
+                                               else go pv (fromJust $ right cursor)
+                  -- Or a ancester with smaller length is met
+                  | otherwise -> do vsWithHighlightElem (_id cv) (vsPutText "lift up to here")
+                                    vsStep
+                                    lpos    <- liftM2 (,) hookl_x hookl_y
+                                    rpos    <- liftM2 (,) hookr_x hookr_y
+                                    (lt,rt) <- split pv n (zipper Leaf) (zipper Leaf) lpos rpos
+                                   -- firstly, move the attaching node up to the right position
+                                    let (tree, path) = closeSave (setf (Node pv Leaf Leaf) cursor)
+                                    -- update and back to the attaching point
+                                    Just cursor' <- fmap (move path . zipper) $ updateTree tree
+                                    -- finally, attach the left and right children
+                                    -- and update their position
+                                    let Node pv' _ _ = viewf cursor'
+                                    whenNode lt (\ lv -> vsConnect (_id pv') (_id lv))
+                                    n@(Node pv' lt Leaf) <- updateTree' (Node pv' lt Leaf)
+                                    whenNode rt (\ rv -> vsConnect (_id pv') (_id rv))
+                                    n                    <- updateTree' (Node pv' lt rt)
+                                    return $ setf n cursor'
+ 
+        split pivot (Node current lt rt) hookl hookr lpos rpos
+            | _addr pivot > _addr current
+                = do vsPutText $ show (_addr pivot) ++ " > " ++ (show (_addr current)) ++ ". Going to right child."
+                     nc <- vsWithHighlightCircle (_x current, _y current) (\hid -> do
+                             let Node rv _ _ = rt
+                             vsMove hid (_x rv, _y rv)
+                             vsStep
+                             vsDisconnect (_id current) (_id rv)
+                             whenJust (up hookl) (\ p -> whenNode (viewf p) (\ pv -> vsConnect (_id pv) (_id current)))
+                             node <- updatePosition (Node current lt Leaf) lpos 0
+                             animateNewPosition node
+                             return node)
+                     vsStep
+                     let hookl' = fromJust $ right $ setf nc hookl
+                     wd  <- fmap (`div` 2) width_delta
+                     hd  <- height_delta
+                     split pivot rt hookl' hookr (lpos <+> (wd, hd)) rpos
+            | _addr pivot < _addr current
+                = do vsPutText $ show (_addr pivot) ++ " < " ++ (show (_addr current)) ++ ". Going to left child."
+                     nc <- vsWithHighlightCircle (_x current, _y current) (\hid -> do
+                             let Node lv _ _ = lt
+                             vsMove hid (_x lv, _y lv)
+                             vsStep
+                             vsDisconnect (_id current) (_id lv)
+                             whenJust (up hookl) (\ p -> whenNode (viewf p) (\ pv -> vsConnect (_id pv) (_id current)))
+                             node <- updatePosition (Node current Leaf rt) rpos 0
+                             animateNewPosition node
+                             return node)
+                     vsStep
+                     let hookr' = fromJust $ left $ setf nc hookr
+                     wd  <- fmap (`div` 2) width_delta
+                     hd  <- height_delta
+                     split pivot lt hookl hookr' lpos (rpos <+> (-wd,hd))
+            | otherwise 
+                = do whenNode lt (\lv -> vsDisconnect (_id current) (_id lv))
+                     lt' <- updatePosition lt lpos 0
+                     animateNewPosition lt'
+                     vsStep
+                     whenNode rt (\rv -> vsDisconnect (_id current) (_id rv))
+                     rt' <- updatePosition rt rpos 0
+                     animateNewPosition rt'
+                     vsStep
+                     return (close (setf lt' hookl), close (setf rt' hookr))
+
+hsAlloc slen tree is ic = runVis (is, ic) (let inorder = toList (zipper tree)
+                                           in go inorder)
+    where toList pos | isLeaf pos = []
+                     | otherwise  = toList (fromJust $ left pos) ++ [pos] ++ toList (fromJust $ right pos)
+
+          len :: Length
+          len = read (packedStringToString slen) :: Int
+
+          go []     = do vsPutText $ "Allocation failed (length = " ++ show len ++ ")."
+                         vsStep
+                         return tree
+          go (p:ps) = do let Node pv _ _ = viewf p
+                         case compare (_len pv) len of
+                           LT -> do when (not $ null ps) (
+                                      vsWithHighlightCircle (_x pv, _y pv) (\hid -> 
+                                        let Node nv _ _ = viewf (head ps)
+                                        in vsMove hid (_x nv, _y nv)))
+                                    go ps
+                           EQ -> do vsWithHighlightElem (_id pv) (do vsPutText "Matched. Deleting this node."
+                                                                     vsDisconnectParent   p
+                                                                     vsDisconnectChildren p
+                                                                     vsStep)
+                                    vsDelete (_id pv)
+                                    vsStep
+                                    node <- merge (fromJust $ left p) (fromJust $ right p)
+                                    updateTree (close $ setf node p)
+                           GT -> do let newa = _addr pv + len
+                                        newl = _len pv - len
+                                    vsWithHighlightElem (_id pv) (do vsPutText ("Matched. Substract " ++ show len ++" from current node")
+                                                                     vsSetText (_id pv) (show (newa, newl)))
+                                    vsPutText ("Demote the current node.")
+                                    node <- demote pv{_addr = newa, _len = newl} (fromJust $ left p) (fromJust $ right p)
+                                    updateTree (close $ setf node p)
+
+merge pos1 pos2 = case (viewf pos1, viewf pos2) of
+                    (Leaf, t2)  -> do vsPutText "Reaching a leaf." >> return t2
+                    (t1, Leaf)  -> do vsPutText "Reaching a leaf." >> return t1
+                    (t1@(Node v1 t11 _), t2@(Node v2 _ t22))
+                        | _len v1 >  _len v2 -> do vsWithHighlightElem (_id v1) (
+                                                     vsWithHighlightElem (_id v2) (do
+                                                       vsPutText ("length of the left > length of the right.")
+                                                       vsDisconnectParent (fromJust $ right pos1)
+                                                       vsDisconnectParent pos2
+                                                       vsStep))
+                                                   t12 <- merge (fromJust $ right pos1) pos2
+                                                   whenNode t12 (\ v -> vsConnect (_id v1) (_id v))
+                                                   return $ Node v1 t11 t12
+                        | _len v1 <= _len v2 -> do vsWithHighlightElem (_id v1) (
+                                                     vsWithHighlightElem (_id v2) (do
+                                                       vsPutText ("length of the left <= length of the right.")
+                                                       vsDisconnectParent pos1
+                                                       vsDisconnectParent (fromJust $ left pos2)
+                                                       vsStep))
+                                                   t21 <- merge pos1 (fromJust $ left pos2)
+                                                   whenNode t21 (\ v -> vsConnect (_id v2) (_id v))
+                                                   return $ Node v2 t21 t22))
+-- demote a node
+demote v pos1 pos2 = case (viewf pos1, viewf pos2) of
+                       (Leaf, Leaf)         -> Node v Leaf Leaf
+                       (Leaf, t2@(Node v2 t21 t22))
+                        | _len v >  _len v2 -> Node v Leaf t2
+                        | _len v <= _len v2 -> Node v2 (demote v Leaf t21) t22
+                       (t1@(Node v1 t11 t12), Leaf)
+                        | _len v >  _len v1 -> Node v t1 Leaf
+                        | _len v <= _len v1 -> Node v1 t11 (demote v t12 Leaf)
+                       (t1@(Node v1 t11 t12), t2@(Node v2 t21 t22))
+                        | _len v >= _len v1 && _len v  >=  _len v2 = Node v t1 t2
+                        | _len v >= _len v1 && _len v2 > _len v    = Node v2 (Node v t1 t21) t22
+                        | _len v >= _len v2 && _len v1 > _len v    = Node v1 t11 (Node v t12 t2)
+                        | _len v1 >  _len v2        = Node v1 t11 (Node v2 (demote v t12 t21) t22)
+                        | _len v1 <= _len v2        = Node v2 (Node v1 t11 (demote v t12 t21)) t22
+
 updateTree Leaf = return Leaf
 updateTree n    = do
     xst <- root_x 
@@ -270,8 +368,14 @@ updateTree n    = do
                    xst
     n' <- updatePosition n' (xst', yst) 0
     animateNewPosition n'
-    command Step
+    vsStep
     return n'
+
+updateTree' tree =  do (t, _)  <- updateWidth tree
+                       t <- updatePosition' t
+                       animateNewPosition t
+                       vsStep
+                       return t
 
 updateWidth Leaf = return (Leaf, 0)
 updateWidth (Node v left right) = do
@@ -322,102 +426,16 @@ liftM2 f a1 a2 = do
     v2 <- a2
     return (v1,v2)
 
+(x0,y0) <+> (x1,y1) = (x0+x1,y0+y1)
 
-vsMoveTree Leaf _ = return ()
-vsMoveTree n@(Node v l r) (px, py) = let dp = (px - _x v, py - _y v) in go n dp >> vsStep
-    where go Leaf _ = return ()
-          go (Node v l r) (dx,dy) = do vsMove (_id v) (_x v + dx, _y v + dy)
-                                       go l (dx, dy)
-                                       go r (dx, dy)
-
-vsGetGrId :: Vis Int
-vsGetGrId = lift (do i <- get
-                     put (i+1)
-                     return i)
-
-vsCreateCircle :: (Addr, Length) -> Int -> Int -> Vis Int
-vsCreateCircle (a,l) x y = do n <- vsGetGrId
-                              command (CreateCircle n a l x y)
-                              return n
-
-vsDelete :: Int -> Vis ()
-vsDelete id = command $ Delete id
-
-vsPutText :: String -> Vis ()
-vsPutText s = command $ SetText 0 s
-
-vsSetText :: Int -> String -> Vis ()
-vsSetText id s = command $ SetText id s
-
-vsConnect :: Int -> Int -> Vis ()
-vsConnect id1 id2 = do clink <- link_color
-                       command $ Connect id1 id2 clink
-
-vsDisconnect :: Int -> Int -> Vis ()
-vsDisconnect id1 id2 = command $ Disconnect id1 id2
-
-vsMove :: Int -> (Int, Int) -> Vis ()
-vsMove id (x,y)   = command $ Move id x y 
-
-vsWithHighlightElem :: Int -> Vis a -> Vis a
-vsWithHighlightElem id action = do command $ SetHighlight id 1
-                                   ret <- action
-                                   command $ SetHighlight id 0
-                                   return ret
-
-vsWithHighlightCircle :: (Addr,Length) -> (Int -> Vis a) -> Vis a
-vsWithHighlightCircle (x,y) action = do n     <- vsGetGrId
-                                        chigh <- highlight_color_0
-                                        command (CreateHighlightCircle n chigh x y)
-                                        ret   <- action n
-                                        vsDelete n
-                                        return ret
-
-vsWithLabel :: String ->  (Int, Int) -> (Int -> Vis ()) -> Vis ()
-vsWithLabel s (x,y) action = do n <- vsGetGrId
-                                command (CreateLabel n s x y)
-                                action n    
-                                vsDelete n
-
-vsStep = command Step
-
-command :: Command -> Vis () 
-command x = tell [x]
-
-instance Show Color where
-    show (Color col) = packedStringToString col
-    
-toCommand = concat . intersperse "<;>"
-instance Show Command where
-    show (CreateCircle x a l z w) = toCommand ["CreateCircle", show x, show (a,l), show z, show w]
-    show (SetForegroundColor x y) = toCommand ["SetForegroundColor", show x, show y]
-    show (SetBackgroundColor x y) = toCommand ["SetBackgroundColor", show x, show y]
-    show Step                     = toCommand ["Step"]
-    show (SetHighlight x y)       = toCommand ["SetHighlight", show x, show y]
-    show (SetText x y)            = toCommand ["SetText", show x, y]
-    show (Connect x y z)          = toCommand ["Connect", show x, show y, show z]
-    show (CreateHighlightCircle x y z w) = toCommand ["CreateHighlightCircle", show x, show y, show z, show w]
-    show (Move x y z)             = toCommand ["Move", show x, show y, show z]
-    show (Delete x)               = toCommand ["Delete", show x]
-    show (CreateLabel x y z w)    = toCommand ["CreateLabel", show x, y, show z, show w]
-    show (Disconnect x y)         = toCommand ["Disconnect", show x, show y]
-
-#ifdef __GLASGOW_HASKELL__
-type PackedString = String
-packedStringToString = id
-
-istate = 1 :: Int
-iconfig= C{
-  _root_x = 400,  _root_y =120,
-  _hookl_x = 550, _hookl_y = 120,
-  _hookr_x = 650, _hookr_y = 120,
-  _width_delta = 50, _height_delta = 50,
-  _foreground_color = "#77", _background_color = "#77",
-  _link_color = "#ee",
-  _highlight_color_0 = "#ee", _highlight_color_1 = "#ee", _highlight_color_2 = "#ee"
-}
-
-#endif
+vsDisconnectParent cursor   = whenNode (viewf cursor) (\ cv ->
+                                whenJust (up cursor)  (\ pr -> 
+                                  whenNode (viewf pr) (\ pv -> vsDisconnect (_id pv) (_id cv))))
+vsDisconnectChildren cursor = whenNode (viewf cursor) (\ cv -> do
+                                whenNode (viewf $ fromJust $ left cursor) (\ lv -> 
+                                  vsDisconnect (_id cv) (_id lv))
+                                whenNode (viewf $ fromJust $ right cursor) (\ rv ->
+                                  vsDisconnect (_id cv) (_id rv)))
 
 #ifdef __UHC__
 data JsCollection 
@@ -429,8 +447,8 @@ foreign export js "hsConfig" hsConfig :: Int -> Int -> Int -> Int ->
                                          PackedString -> PackedString -> PackedString -> VConfig
 foreign export js "hsCmds"   hsCmds   :: JsCollection -> [Command] -> IO ()
 foreign export js "hsLeaf"   hsLeaf   :: Heap
-foreign export js "hsFree"   hsFree   :: (Addr, Length) -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
-foreign export js "hsPiece"  hsPiece  :: PackedString -> (Addr, Length)
+foreign export js "hsFree"   hsFree   :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
+foreign export js "hsAlloc"  hsAlloc  :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
 
 hsConfig = C
 hsCmds obj cmds = mapM_ (\c -> jsPush obj (stringToJSString (show c))) cmds

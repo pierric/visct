@@ -82,6 +82,11 @@ CT.prototype.addControls =  function()
 	this.freeField.onkeydown = this.returnSubmit(this.freeField,  this.freeCallback.bind(this), 20);
 	this.freeButton = addControlToAlgorithmBar("Button", "Free");
 	this.freeButton.onclick = this.freeCallback.bind(this);
+
+	this.allocField = addControlToAlgorithmBar("Text", "");
+	this.allocField.onkeydown = this.returnSubmit(this.allocField,  this.allocCallback.bind(this), 20);
+	this.allocButton = addControlToAlgorithmBar("Button", "Alloc");
+	this.allocButton.onclick = this.allocCallback.bind(this);
 }
 
 CT.prototype.reset = function()
@@ -107,11 +112,45 @@ CT.prototype.freeElement = function(insertedValue)
 	this.commands = new Array();	
 	this.cmd("SetText", 0, "Inserting "+insertedValue);
 	
-    [r,n,c] = hsFree(hsPiece(insertedValue), this.treeRoot,
-                     this.nextIndex, this.config);
-    this.treeRoot  = r;
-    this.nextIndex = n;
-    hsCmds(this.commands, c);
+    res = hsFree(insertedValue, this.treeRoot,
+                 this.nextIndex, this.config);
+    this.treeRoot  = res[0];
+    this.nextIndex = res[1];
+    hsCmds(this.commands, res[2]);
+
+    var log = document.getElementById("log");
+    log.innerHTML = "";
+    for (c in this.commands)
+    {
+        log.innerHTML += this.commands[c] + "<br/>";
+    }
+
+	this.cmd("SetText", 0, "");				
+	return this.commands;
+}
+
+CT.prototype.allocCallback = function(event)
+{
+	var requestValue = this.allocField.value;
+	// Get text value
+	if (requestValue != "")
+	{
+		// set text value
+		this.allocField.value = "";
+		this.implementAction(this.allocElement.bind(this), requestValue);
+	}
+}
+
+CT.prototype.allocElement = function(requestValue)
+{
+	this.commands = new Array();	
+	
+    res = hsAlloc(requestValue, this.treeRoot,
+                  this.nextIndex, this.config);
+    this.treeRoot  = res[0];
+    this.nextIndex = res[1];
+
+    hsCmds(this.commands, res[2]);
     var log = document.getElementById("log");
     log.innerHTML = "";
     for (c in this.commands)
@@ -127,12 +166,16 @@ CT.prototype.disableUI = function(event)
 {
 	this.freeField.disabled = true;
 	this.freeButton.disabled = true;
+    this.allocField.disabled = true;
+    this.allocButton.disabled = true;
 }
 
 CT.prototype.enableUI = function(event)
 {
 	this.freeField.disabled = false;
 	this.freeButton.disabled = false;
+    this.allocField.disabled = false;
+    this.allocButton.disabled = false;
 }
 
 var currentAlg;
