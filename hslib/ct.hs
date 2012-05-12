@@ -1,4 +1,3 @@
-import Data.Maybe(fromJust)
 import Vis
 import CartesionTree
 
@@ -65,12 +64,12 @@ attach cid piece@(naddr, nlen) heap
                                           vsStep)
                                       if naddr < _addr value 
                                         then
-                                          attach cid piece (fromJust (left  heap))
+                                          attach cid piece (leftJust  heap)
                                         else
-                                          attach cid piece (fromJust (right heap))
+                                          attach cid piece (rightJust heap)
             -- found an attach point
-            | otherwise -> do let pid  = fmap (\ (Node v _ _) -> _id v) (up heap >>= (return . viewf))
-                              whenJust pid (\ rpid -> vsDisconnect rpid (_id value) >> vsConnect rpid cid >> vsConnect cid (_id value) >> vsStep)
+            | otherwise -> do whenJust (up heap >>= (return . viewf)) (\ (Node pv _ _) ->
+                                vsDisconnect (_id pv) (_id value) >> vsConnect (_id pv) cid >> vsConnect cid (_id value) >> vsStep)
                               lpos     <- liftM2 (,) hookl_x hookl_y
                               rpos     <- liftM2 (,) hookr_x hookr_y
 
@@ -218,8 +217,8 @@ promote pos = case viewf pos of
                                                  vsMove hid (_x rv, _y rv))
                                              vsStep
                                              if _addr cv > _addr pv
-                                               then go pv (fromJust $ left  cursor)
-                                               else go pv (fromJust $ right cursor)
+                                               then go pv (leftJust  cursor)
+                                               else go pv (rightJust cursor)
                   -- Or a ancester with smaller length is met
                   | otherwise -> do vsWithHighlightElem (_id cv) (vsPutText "lift up to here")
                                     vsStep
@@ -252,7 +251,7 @@ promote pos = case viewf pos of
                              animateNewPosition node
                              return node)
                      vsStep
-                     let hookl' = fromJust $ right $ setf nc hookl
+                     let hookl' = rightJust $ setf nc hookl
                      wd  <- fmap (`div` 2) width_delta
                      hd  <- height_delta
                      split pivot rt hookl' hookr (lpos <+> (wd, hd)) rpos
@@ -268,7 +267,7 @@ promote pos = case viewf pos of
                              animateNewPosition node
                              return node)
                      vsStep
-                     let hookr' = fromJust $ left $ setf nc hookr
+                     let hookr' = leftJust $ setf nc hookr
                      wd  <- fmap (`div` 2) width_delta
                      hd  <- height_delta
                      split pivot lt hookl hookr' lpos (rpos <+> (-wd,hd))
@@ -286,7 +285,7 @@ promote pos = case viewf pos of
 hsAlloc slen tree is ic = runVis (is, ic) (let inorder = toList (zipper tree)
                                            in go inorder)
     where toList pos | isLeaf pos = []
-                     | otherwise  = toList (fromJust $ left pos) ++ [pos] ++ toList (fromJust $ right pos)
+                     | otherwise  = toList (leftJust pos) ++ [pos] ++ toList (rightJust pos)
 
           len :: Length
           len = read (packedStringToString slen) :: Int
@@ -294,7 +293,7 @@ hsAlloc slen tree is ic = runVis (is, ic) (let inorder = toList (zipper tree)
           go []     = do vsPutText $ "Allocation failed (length = " ++ show len ++ ")."
                          vsStep
                          return tree
-          go (p:ps) = do let Node pv _ _ = viewf p
+          go (p:ps) = do let Node pv lt rt = viewf p
                          case compare (_len pv) len of
                            LT -> do when (not $ null ps) (
                                       vsWithHighlightCircle (_x pv, _y pv) (\hid -> 
@@ -307,15 +306,15 @@ hsAlloc slen tree is ic = runVis (is, ic) (let inorder = toList (zipper tree)
                                                                      vsStep)
                                     vsDelete (_id pv)
                                     vsStep
-                                    node <- merge (fromJust $ left p) (fromJust $ right p)
+                                    node <- merge (leftJust p) (rightJust p)
                                     updateTree (close $ setf node p)
                            GT -> do let newa = _addr pv + len
                                         newl = _len pv - len
                                     vsWithHighlightElem (_id pv) (do vsPutText ("Matched. Substract " ++ show len ++" from current node")
-                                                                     vsSetText (_id pv) (show (newa, newl)))
-                                    vsPutText ("Demote the current node.")
-                                    node <- demote pv{_addr = newa, _len = newl} (fromJust $ left p) (fromJust $ right p)
-                                    updateTree (close $ setf node p)
+                                                                     vsSetText (_id pv) (show (newa, newl))
+                                                                     vsPutText ("Demote the current node."))
+                                    p' <- demote $ setf (Node (pv{_addr = newa, _len = newl}) lt rt) p
+                                    updateTree (close p')
 
 merge pos1 pos2 = case (viewf pos1, viewf pos2) of
                     (Leaf, t2)  -> do vsPutText "Reaching a leaf." >> return t2
@@ -324,37 +323,146 @@ merge pos1 pos2 = case (viewf pos1, viewf pos2) of
                         | _len v1 >  _len v2 -> do vsWithHighlightElem (_id v1) (
                                                      vsWithHighlightElem (_id v2) (do
                                                        vsPutText ("length of the left > length of the right.")
-                                                       vsDisconnectParent (fromJust $ right pos1)
+                                                       vsDisconnectParent (rightJust pos1)
                                                        vsDisconnectParent pos2
                                                        vsStep))
-                                                   t12 <- merge (fromJust $ right pos1) pos2
+                                                   t12 <- merge (rightJust pos1) pos2
                                                    whenNode t12 (\ v -> vsConnect (_id v1) (_id v))
                                                    return $ Node v1 t11 t12
                         | _len v1 <= _len v2 -> do vsWithHighlightElem (_id v1) (
                                                      vsWithHighlightElem (_id v2) (do
                                                        vsPutText ("length of the left <= length of the right.")
                                                        vsDisconnectParent pos1
-                                                       vsDisconnectParent (fromJust $ left pos2)
+                                                       vsDisconnectParent (leftJust pos2)
                                                        vsStep))
-                                                   t21 <- merge pos1 (fromJust $ left pos2)
+                                                   t21 <- merge pos1 (leftJust pos2)
                                                    whenNode t21 (\ v -> vsConnect (_id v2) (_id v))
-                                                   return $ Node v2 t21 t22))
--- demote a node
-demote v pos1 pos2 = case (viewf pos1, viewf pos2) of
-                       (Leaf, Leaf)         -> Node v Leaf Leaf
-                       (Leaf, t2@(Node v2 t21 t22))
-                        | _len v >  _len v2 -> Node v Leaf t2
-                        | _len v <= _len v2 -> Node v2 (demote v Leaf t21) t22
-                       (t1@(Node v1 t11 t12), Leaf)
-                        | _len v >  _len v1 -> Node v t1 Leaf
-                        | _len v <= _len v1 -> Node v1 t11 (demote v t12 Leaf)
-                       (t1@(Node v1 t11 t12), t2@(Node v2 t21 t22))
-                        | _len v >= _len v1 && _len v  >=  _len v2 = Node v t1 t2
-                        | _len v >= _len v1 && _len v2 > _len v    = Node v2 (Node v t1 t21) t22
-                        | _len v >= _len v2 && _len v1 > _len v    = Node v1 t11 (Node v t12 t2)
-                        | _len v1 >  _len v2        = Node v1 t11 (Node v2 (demote v t12 t21) t22)
-                        | _len v1 <= _len v2        = Node v2 (Node v1 t11 (demote v t12 t21)) t22
+                                                   return $ Node v2 t21 t22
+{-- demote a node
+demote v Leaf Leaf = Node v Leaf Leaf
+demote v Leaf t2@(Node v2 t21 t22)
+    | _len v >  _len v2 = Node v Leaf t2
+    | _len v <= _len v2 = Node v2 (demote v Leaf t21) t22
+demote v t1@(Node v1 t11 t12) Leaf
+    | _len v >  _len v1 = Node v t1 Leaf
+    | _len v <= _len v1 = Node v1 t11 (demote v t12 Leaf)
+demote v t1@(Node v1 t11 t12) t2@(Node v2 t21 t22)
+    | _len v >= _len v1 && _len v  >=  _len v2 = Node v t1 t2
+    | _len v >= _len v1 && _len v2 > _len v    = Node v2 (Node v t1 t21) t22
+    | _len v >= _len v2 && _len v1 > _len v    = Node v1 t11 (Node v t12 t2)
+    | _len v1 >  _len v2                       = Node v1 t11 (Node v2 (demote v t12 t21) t22)
+    | _len v1 <= _len v2                       = Node v2 (Node v1 t11 (demote v t12 t21)) t22
+--}
 
+-- precondition: not (isLeaf cursor)
+demote cursor = case viewf cursor of
+                  Node v Leaf Leaf -> do vsPutText "Reaching a leaf."
+                                         vsStep
+                                         return cursor
+                  Node v Leaf t2@(Node v2 t21 t22)
+                    | _len v >  _len v2 -> do vsWithHighlightElem (_id v) (vsPutText "insert here." >> vsConnect (_id v) (_id v2) >> vsStep)
+                                              return cursor
+                    | _len v <= _len v2 -> do vsWithHighlightElem (_id v) (
+                                                vsWithHighlightElem (_id v2) (
+                                                  vsPutText (show (_len v) ++ " <= " ++ (show (_len v2)))))
+                                              vsStep
+                                              vsDisconnectParent cursor 
+                                              vsDisconnectChildren cursor
+                                              whenNode t21 (\vc -> vsDisconnect (_id v2) (_id vc))
+                                              vsStep
+                                              tr <- updateTree' (Node v2 (Node v Leaf t21) t22)
+                                              vsConnect (_id v2) (_id v)
+                                              whenNode t21 (\vc -> vsConnect (_id v) (_id vc))
+                                              vsOpParent cursor (\ pv -> vsConnect (_id pv) (_id v2))
+                                              demote $ leftJust $ setf tr cursor
+                  Node v t1@(Node v1 t11 t12) Leaf 
+                    | _len v >  _len v1 -> do vsWithHighlightElem (_id v) (vsPutText "insert here." >> vsConnect (_id v) (_id v1) >> vsStep)
+                                              return cursor
+                    | _len v <= _len v1 -> do vsWithHighlightElem (_id v) (
+                                                vsWithHighlightElem (_id v1) (
+                                                  vsPutText (show (_len v) ++ " <= " ++ (show (_len v1)))))
+                                              vsStep
+                                              vsDisconnectParent cursor
+                                              vsDisconnectChildren cursor
+                                              whenNode t12 (\vc -> vsDisconnect (_id v1) (_id vc))
+                                              vsStep
+                                              tr <- updateTree' (Node v1 t11 (Node v t12 Leaf))
+                                              vsConnect (_id v1) (_id v)
+                                              whenNode t12 (\vc -> vsConnect (_id v) (_id vc))
+                                              vsOpParent cursor (\ pv -> vsConnect (_id pv) (_id v1))
+                                              demote $ rightJust $ setf tr cursor
+                  Node v t1@(Node v1 t11 t12) t2@(Node v2 t21 t22)
+                    | _len v >= _len v1 && _len v  >=  _len v2 -> do vsWithHighlightElem (_id v) (vsPutText "insert here." >> vsConnect (_id v) (_id v2) >> vsStep)
+                                                                     return cursor
+                    | _len v >= _len v1 && _len v2 > _len v    -> do vsWithHighlightElem (_id v) (
+                                                                       vsWithHighlightElem (_id v1) (
+                                                                         vsWithHighlightElem (_id v2) (
+                                                                           vsPutText (show (_len v) ++ " >= " ++ (show (_len v1)) ++ " && " ++
+                                                                                      show (_len v) ++ " <  " ++ (show (_len v2))))))
+                                                                     vsStep
+                                                                     vsDisconnectParent cursor
+                                                                     vsDisconnectChildren cursor
+                                                                     whenNode t21 (\ vc -> vsDisconnect (_id v2) (_id vc))
+                                                                     vsStep
+                                                                     tr <- updateTree' (Node v2 (Node v t1 t21) t22)
+                                                                     vsConnect (_id v2) (_id v)
+                                                                     vsConnect (_id v)  (_id v1)
+                                                                     whenNode t21 (\ vc -> vsConnect (_id v) (_id vc))
+                                                                     vsOpParent cursor (\ pv -> vsConnect (_id pv) (_id v2))
+                                                                     demote $ leftJust $ setf tr cursor
+                    | _len v >= _len v2 && _len v1 > _len v    -> do vsWithHighlightElem (_id v) (
+                                                                      vsWithHighlightElem (_id v1) (
+                                                                        vsWithHighlightElem (_id v2) (
+                                                                          vsPutText (show (_len v) ++ " <  " ++ (show (_len v1)) ++ " && " ++
+                                                                                     show (_len v) ++ " >= " ++ (show (_len v2))))))
+                                                                     vsStep
+                                                                     vsDisconnectParent cursor
+                                                                     vsDisconnectChildren cursor
+                                                                     whenNode t12 (\vc -> vsDisconnect (_id v1) (_id vc))
+                                                                     vsStep
+                                                                     tr <- updateTree' (Node v1 t11 (Node v t12 t2))
+                                                                     vsConnect (_id v1) (_id v)
+                                                                     vsConnect (_id v)  (_id v2)
+                                                                     whenNode t12 (\ vc -> vsConnect (_id v) (_id vc))
+                                                                     vsOpParent cursor (\ pv -> vsConnect (_id pv) (_id v1))
+                                                                     demote $ rightJust $ setf tr cursor
+                    | _len v1 >  _len v2                       -> do vsWithHighlightElem (_id v) (
+                                                                      vsWithHighlightElem (_id v1) (
+                                                                        vsWithHighlightElem (_id v2) (
+                                                                         vsPutText (show (_len v) ++ " < min{" ++ show (_len v1) ++ ", " ++ show (_len v2) ++ "} &&" ++
+                                                                                    show (_len v1) ++ " > " ++ (show (_len v2))))))
+                                                                     vsStep
+                                                                     vsDisconnectParent cursor
+                                                                     vsDisconnectChildren cursor
+                                                                     whenNode t12 (\vc -> vsDisconnect (_id v1) (_id vc))
+                                                                     whenNode t21 (\vc -> vsDisconnect (_id v2) (_id vc))
+                                                                     vsStep
+                                                                     tr <- updateTree' (Node v1 t11 (Node v2 (Node v t12 t21) t22))
+                                                                     vsConnect (_id v1) (_id v2)
+                                                                     vsConnect (_id v2) (_id v)
+                                                                     whenNode t12 (\vc -> vsConnect (_id v) (_id vc))
+                                                                     whenNode t21 (\vc -> vsConnect (_id v) (_id vc))
+                                                                     vsOpParent cursor (\pv -> vsConnect (_id pv) (_id v1))
+                                                                     demote $ leftJust $ rightJust $ setf tr cursor
+                    | _len v1 <= _len v2                       -> do vsWithHighlightElem (_id v) (
+                                                                      vsWithHighlightElem (_id v1) (
+                                                                        vsWithHighlightElem (_id v2) (
+                                                                          vsPutText (show (_len v) ++ " < min{" ++ show (_len v1) ++ ", " ++ show (_len v2) ++ "} &&" ++
+                                                                                     show (_len v1) ++ " <= " ++ (show (_len v2))))))
+                                                                     vsStep
+                                                                     vsDisconnectParent cursor
+                                                                     vsDisconnectChildren cursor
+                                                                     whenNode t12 (\vc -> vsDisconnect (_id v1) (_id vc))
+                                                                     whenNode t21 (\vc -> vsDisconnect (_id v2) (_id vc))
+                                                                     vsStep
+                                                                     tr <- updateTree' (Node v2 (Node v1 t11 (Node v t12 t21)) t22)
+                                                                     vsConnect (_id v2) (_id v1)
+                                                                     vsConnect (_id v1) (_id v)
+                                                                     whenNode t12 (\vc -> vsConnect (_id v) (_id vc))
+                                                                     whenNode t21 (\vc -> vsConnect (_id v) (_id vc))
+                                                                     vsOpParent cursor (\pv -> vsConnect (_id pv) (_id v2))
+                                                                     demote $ rightJust $ leftJust $ setf tr cursor
+                                                                      
 updateTree Leaf = return Leaf
 updateTree n    = do
     xst <- root_x 
@@ -428,14 +536,16 @@ liftM2 f a1 a2 = do
 
 (x0,y0) <+> (x1,y1) = (x0+x1,y0+y1)
 
-vsDisconnectParent cursor   = whenNode (viewf cursor) (\ cv ->
-                                whenJust (up cursor)  (\ pr -> 
-                                  whenNode (viewf pr) (\ pv -> vsDisconnect (_id pv) (_id cv))))
-vsDisconnectChildren cursor = whenNode (viewf cursor) (\ cv -> do
-                                whenNode (viewf $ fromJust $ left cursor) (\ lv -> 
-                                  vsDisconnect (_id cv) (_id lv))
-                                whenNode (viewf $ fromJust $ right cursor) (\ rv ->
-                                  vsDisconnect (_id cv) (_id rv)))
+vsOpParent cursor act   = whenJust (up cursor)  (\ pr -> 
+                              whenNode (viewf pr) (\ pv -> act pv))
+
+vsOpChildren cursor act = do whenNode (viewf $ leftJust cursor) (\ lv -> 
+                               act lv)
+                             whenNode (viewf $ rightJust cursor) (\ rv ->
+                               act rv)
+
+vsDisconnectParent cursor   = whenNode (viewf cursor) (\ cv -> vsOpParent   cursor (\ pv -> vsDisconnect (_id pv) (_id cv)))
+vsDisconnectChildren cursor = whenNode (viewf cursor) (\ cv -> vsOpChildren cursor (\ hv -> vsDisconnect (_id cv) (_id hv)))
 
 #ifdef __UHC__
 data JsCollection 

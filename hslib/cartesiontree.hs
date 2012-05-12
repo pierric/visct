@@ -1,6 +1,7 @@
 module CartesionTree where
 
 import Control.Monad
+import Data.Maybe
 
 data CartesionTree a = Node a (CartesionTree a) (CartesionTree a) | Leaf deriving (Show)
 data Crumb a = L a (CartesionTree a)
@@ -11,12 +12,18 @@ type Zipper a = (CartesionTree a, [Crumb a])
 left  (Node v l r, cs) = Just (l, L v r:cs)
 left  (Leaf, cs)       = Nothing
 
+leftJust = fromJust . left
+
 right (Node v l r, cs) = Just (r, R v l:cs)
 right (Leaf, cs)       = Nothing
+
+rightJust = fromJust . right
 
 up    (l, L v r:cs) = Just (Node v l r, cs)
 up    (r, R v l:cs) = Just (Node v l r, cs)
 up    (r, [])       = Nothing
+
+upJust = fromJust . up
 
 isRoot (_, []) = True
 isRoot _       = False
