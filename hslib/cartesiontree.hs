@@ -1,4 +1,17 @@
-module CartesionTree where
+{- Defined the CartesionTree structure, its navigation type Zipper,
+ - and navigation operation on Zipper
+ -}
+module CartesionTree (
+  CartesionTree(..),
+  left, leftJust,
+  right, rightJust,
+  up, upJust,
+  root,
+  isRoot, isLeaf,
+  viewf, setf, close
+  move,
+  leftSave, rightSave, upSave, closeSave
+  ) where
 
 import Control.Monad
 import Data.Maybe
@@ -60,6 +73,12 @@ upSave :: Zipper a -> Maybe (Zipper a, Step)
 upSave (l, L v r:cs) = Just ((Node v l r, cs), SL)
 upSave (r, R v l:cs) = Just ((Node v l r, cs), SR)
 upSave (r, [])       = Nothing
+
+leftSave  (Node v l r, cs) = Just ((l, L v r:cs), SU)
+leftSave  (Leaf, cs)       = Nothing
+
+rightSave (Node v l r, cs) = Just ((r, R v l:cs), SU)
+rightSave (Leaf, cs)       = Nothing
 
 closeSave :: Zipper a -> (CartesionTree a, [Step])
 closeSave z = go z []

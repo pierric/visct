@@ -1,3 +1,5 @@
+{- Identity monad, the trivial monad, 
+ - cloning the standard library 'transformers' -}
 module Identity(
     Identity,
     runIdentity,

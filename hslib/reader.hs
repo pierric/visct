@@ -1,3 +1,5 @@
+{- Reader monad, computation querying a environment, 
+ - cloning the standard library 'transformers' -}
 module Reader(
     ReaderT,
     runReaderT,

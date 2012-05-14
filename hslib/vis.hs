@@ -1,3 +1,6 @@
+{- Visualization moand.
+ - Defines the local state and environment,
+ - and some basic visualization operation. -}
 module Vis where
 
 import Trans
@@ -22,6 +25,7 @@ type Heap = CartesionTree Value
 type HeapZipper = Zipper  Value
 
 newtype Color = Color PackedString
+-- the local environment
 data VConfig = C {
   _root_x,  _root_y  :: Int,
   _hookl_x, _hookl_y :: Int,
@@ -30,7 +34,7 @@ data VConfig = C {
   _foreground_color, _background_color :: PackedString,
   _link_color, _highlight_color_0, _highlight_color_1, _highlight_color_2 :: PackedString
 }
-
+-- some functions querying the environment
 root_x, root_y, hookl_x, hookl_y, hookr_x, hookr_y, width_delta, height_delta :: Vis Int
 root_x            = (lift . lift) (asks _root_x)
 root_y            = (lift . lift) (asks _root_y)
@@ -49,8 +53,10 @@ highlight_color_0 = (lift . lift) (asks (Color . _highlight_color_0))
 highlight_color_1 = (lift . lift) (asks (Color . _highlight_color_1))
 highlight_color_2 = (lift . lift) (asks (Color . _highlight_color_2))
 
+-- the local state
 type VState = Int
 
+-- the type of output command for the Visualization library.
 data Command = CreateCircle Int Addr Length Int Int     -- graphicId value xpos ypos
              | SetForegroundColor Int Color             -- graphicId color
              | SetBackgroundColor Int Color             -- graphicId color
@@ -64,19 +70,22 @@ data Command = CreateCircle Int Addr Length Int Int     -- graphicId value xpos 
              | CreateLabel Int String Int Int           -- graphicId text xpos ypos
              | Step
 
+-- the composite working monad
 type Vis = WriterT [Command] (StateT VState (Reader VConfig))
 runVis :: (VState, VConfig) -> Vis a -> (a, VState, [Command])
 runVis (is, ic) act = let ((a,w),s) = runReader (runStateT (runWriterT act) is) ic
                       in (a,s,w)
 
-
+{--
 vsMoveTree Leaf _ = return ()
 vsMoveTree n@(Node v l r) (px, py) = let dp = (px - _x v, py - _y v) in go n dp >> vsStep
     where go Leaf _ = return ()
           go (Node v l r) (dx,dy) = do vsMove (_id v) (_x v + dx, _y v + dy)
                                        go l (dx, dy)
                                        go r (dx, dy)
+--}
 
+{- The basic visualization operations -}
 vsGetGrId :: Vis Int
 vsGetGrId = lift (do i <- get
                      put (i+1)
@@ -130,9 +139,12 @@ vsWithLabel s (x,y) action = do n <- vsGetGrId
 
 vsStep = command Step
 
+-- output a command in our working monad.
 command :: Command -> Vis () 
 command x = tell [x]
 
+-- convertion from Command to String, the resulting string 
+-- will be used in the Visualization library.
 instance Show Color where
     show (Color col) = packedStringToString col
     
@@ -151,6 +163,8 @@ instance Show Command where
     show (CreateLabel x y z w)    = toCommand ["CreateLabel", show x, y, show z, show w]
     show (Disconnect x y)         = toCommand ["Disconnect", show x, show y]
 
+{- I first use ghc to compile the code, for its friendly compiling error messages. 
+ - the following definitions are handful. -}
 #ifdef __GLASGOW_HASKELL__
 type PackedString = String
 packedStringToString = id

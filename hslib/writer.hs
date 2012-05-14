@@ -1,3 +1,5 @@
+{- Writer monad, the computation outputing something, 
+ - cloning the standard library 'transformers' -}
 module Writer(
     WriterT,
     runWriterT,

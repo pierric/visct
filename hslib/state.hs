@@ -1,3 +1,5 @@
+{- State monad, the computation manipulating a local state, 
+ - cloning the standard library 'transformers' -}
 module State(
     StateT,
     runStateT,
