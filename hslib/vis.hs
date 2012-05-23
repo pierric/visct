@@ -71,10 +71,17 @@ data Command = CreateCircle Int Addr Length Int Int     -- graphicId value xpos 
              | Step
 
 -- the composite working monad
+#ifdef __UHC__
+type Vis = WriterT [Command] (StateT VState (Reader VConfig))
+runVis :: (VState, VConfig) -> Vis a -> (a, VState, [Command])
+runVis (is, ic) act = let ((a,w),s) = runReader (runStateT (runWriterT act) is) ic
+                      in (a,s,w)
+#else
 type Vis = WriterT [Command] (StateT VState (ReaderT VConfig IO))
 runVis :: (VState, VConfig) -> Vis a -> IO (a, VState, [Command])
 runVis (is, ic) act = do ((a,w),s) <- runReaderT (runStateT (runWriterT act) is) ic
                          return (a,s,w)
+#endif
 
 {--
 vsMoveTree Leaf _ = return ()

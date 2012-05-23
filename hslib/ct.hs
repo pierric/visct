@@ -5,7 +5,7 @@ import Vis
 import CartesionTree
 
 {- Put a piece in the heap -}
-hsFree :: PackedString -> Heap -> VState -> VConfig -> IO (Heap, VState, [Command])
+hsFree :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
 hsFree spiece tree is ic = runVis (is, ic) (do let piece = read (packedStringToString spiece) :: (Addr, Length)
                                                cid   <- vsCreateCircle piece 100 100
                                                tree' <- fmap close $ attach cid piece (zipper tree) >>= promote
@@ -810,8 +810,8 @@ foreign export js "hsConfig" hsConfig :: Int -> Int -> Int -> Int ->
                                          PackedString -> PackedString -> PackedString -> VConfig
 foreign export js "hsCmds"   hsCmds   :: JsCollection -> [Command] -> IO ()
 foreign export js "hsLeaf"   hsLeaf   :: Heap
-foreign export js "hsFree"   hsFree   :: PackedString -> Heap -> VState -> VConfig -> IO (Heap, VState, [Command])
-foreign export js "hsAlloc"  hsAlloc  :: PackedString -> Heap -> VState -> VConfig -> IO (Heap, VState, [Command])
+foreign export js "hsFree"   hsFree   :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
+foreign export js "hsAlloc"  hsAlloc  :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
 
 hsConfig = C
 hsCmds obj cmds = mapM_ (\c -> jsPush obj (stringToJSString (show c))) cmds
