@@ -73,7 +73,6 @@ CT.prototype.init = function(am, w, h)
 	this.animationManager.StartNewAnimation(this.commands);
 	this.animationManager.skipForward();
 	this.animationManager.clearHistory();
-	
 }
 
 CT.prototype.addControls =  function()
@@ -110,20 +109,13 @@ CT.prototype.freeCallback = function(event)
 CT.prototype.freeElement = function(insertedValue)
 {
 	this.commands = new Array();	
-	this.cmd("SetText", 0, "Inserting "+insertedValue);
-	
+    this.cmd("SetText", 0, "Inserting "+insertedValue);
+
     res = hsFree(insertedValue, this.treeRoot,
                  this.nextIndex, this.config);
     this.treeRoot  = res[0];
     this.nextIndex = res[1];
     hsCmds(this.commands, res[2]);
-
-    var log = document.getElementById("log");
-    log.innerHTML = "";
-    for (c in this.commands)
-    {
-        log.innerHTML += this.commands[c] + "<br/>";
-    }
 
 	this.cmd("SetText", 0, "");				
 	return this.commands;
@@ -151,12 +143,6 @@ CT.prototype.allocElement = function(requestValue)
     this.nextIndex = res[1];
 
     hsCmds(this.commands, res[2]);
-    var log = document.getElementById("log");
-    log.innerHTML = "";
-    for (c in this.commands)
-    {
-        log.innerHTML += this.commands[c] + "<br/>";
-    }
 
 	this.cmd("SetText", 0, "");				
 	return this.commands;

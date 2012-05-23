@@ -119,4 +119,16 @@ body {
 
 EM {text-decoration: bold;}
 
-	
+#canvas {
+    float: left;
+}
+#log {
+    width: 20em;
+    height: 500px;
+    float: left;
+    overflow: auto;
+}
+.clear {
+    clear: both;
+}
+

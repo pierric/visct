@@ -9,6 +9,7 @@ module Reader(
   ) where
 
 import Identity
+import Trans
 
 newtype ReaderT r m a = ReaderT { runReaderT :: r -> m a }
 
@@ -21,6 +22,9 @@ instance (Monad m) => Monad (ReaderT r m) where
         a <- runReaderT m r
         runReaderT (k a) r
     fail msg = ReaderT $ const (fail msg)
+
+instance MonadTrans (ReaderT r) where
+    lift m = ReaderT (\r -> m)
 
 mapReaderT :: (m a -> n b) -> ReaderT r m a -> ReaderT r n b
 mapReaderT f m = ReaderT $ f . runReaderT m

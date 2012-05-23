@@ -7,11 +7,11 @@
 		
 		<!-- css sheet for how the page is laid out -->
 		
-		<link rel="stylesheet" href="visualizationPageStyle.css">
+		<link rel="stylesheet" href="visualizationPageStyle.css"/>
 			
 			
 		<!-- jqueury stuff.  Only used for the animation speed slider. -->
-		<link rel="stylesheet" href="ThirdParty/jquery-ui-1.8.11.custom.css">
+		<link rel="stylesheet" href="ThirdParty/jquery-ui-1.8.11.custom.css"/>
 				
 		<script src="ThirdParty/jquery-1.5.2.min.js"></script>
 		<script src="ThirdParty/jquery-ui-1.8.11.custom.min.js"></script>
@@ -68,7 +68,7 @@
         <script type="text/javascript" src="hslib/State.mjs"></script>
         <script type="text/javascript" src="hslib/CartesionTree.mjs"></script>
         <script type="text/javascript" src="hslib/Vis.mjs"></script>
-        <script type="text/javascript" src="hslib/ct.mjs"></script>
+        <script type="text/javascript" src="hslib/Main.mjs"></script>
         <script type="text/javascript" src="CT.js"></script>
 			
 	 </head> 
@@ -81,7 +81,7 @@
 				<h1>Cartesion Tree</h1>
 			</div>
 			
-			<div = id = "mainContent"> 
+			<div id = "mainContent"> 
 				
 				<div id = "algoControlSection">
 					<!-- Table for buttons to control specific animation (insert/find/etc) -->
@@ -89,12 +89,13 @@
 					<table id="AlgorithmSpecificControls"> </table> 
 				</div>
 				
-					<!-- Drawing canvas where all animation is done.  Note:  can be resized in code -->
+    			<!-- Drawing canvas where all animation is done.  Note:  can be resized in code -->
 									
 				<canvas id="canvas" width="1000" height="500"></canvas>
+                <div class="clear"></div>
 				
 				<div id = "generalAnimationControlSection">
-					<!-- Table for buttons to control general animation (play/pause/undo/etc) ->
+					<!-- Table for buttons to control general animation (play/pause/undo/etc) -->
 					<!-- (filled in by javascript code, specifically AnimationMain.js)  -->
 
 					<table id="GeneralAnimationControls">  </table>		
@@ -107,7 +108,5 @@
 			</div>
 
 		</div><!-- container -->
-        <div id="log">
-        </div>
 	</body>
 </html>

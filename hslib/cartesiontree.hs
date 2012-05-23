@@ -3,12 +3,14 @@
  -}
 module CartesionTree (
   CartesionTree(..),
+  Zipper,
+  zipper,
   left, leftJust,
   right, rightJust,
   up, upJust,
   root,
   isRoot, isLeaf,
-  viewf, setf, close
+  viewf, setf, close,
   move,
   leftSave, rightSave, upSave, closeSave
   ) where

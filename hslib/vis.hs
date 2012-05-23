@@ -71,10 +71,10 @@ data Command = CreateCircle Int Addr Length Int Int     -- graphicId value xpos 
              | Step
 
 -- the composite working monad
-type Vis = WriterT [Command] (StateT VState (Reader VConfig))
-runVis :: (VState, VConfig) -> Vis a -> (a, VState, [Command])
-runVis (is, ic) act = let ((a,w),s) = runReader (runStateT (runWriterT act) is) ic
-                      in (a,s,w)
+type Vis = WriterT [Command] (StateT VState (ReaderT VConfig IO))
+runVis :: (VState, VConfig) -> Vis a -> IO (a, VState, [Command])
+runVis (is, ic) act = do ((a,w),s) <- runReaderT (runStateT (runWriterT act) is) ic
+                         return (a,s,w)
 
 {--
 vsMoveTree Leaf _ = return ()
@@ -98,9 +98,6 @@ vsCreateCircle (a,l) x y = do n <- vsGetGrId
 
 vsDelete :: Int -> Vis ()
 vsDelete id = command $ Delete id
-
-vsPutText :: String -> Vis ()
-vsPutText s = command $ SetText 0 s
 
 vsSetText :: Int -> String -> Vis ()
 vsSetText id s = command $ SetText id s
@@ -179,5 +176,13 @@ iconfig= C{
   _link_color = "#ee",
   _highlight_color_0 = "#ee", _highlight_color_1 = "#ee", _highlight_color_2 = "#ee"
 }
-
+vsPutText :: String -> Vis ()
+vsPutText s = do (lift . lift . lift) (putStrLn s)
+                 command $ SetText 0 s
 #endif
+
+#ifdef __UHC__
+vsPutText :: String -> Vis ()
+vsPutText s = command $ SetText 0 s
+#endif
+

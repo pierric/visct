@@ -5,7 +5,7 @@ import Vis
 import CartesionTree
 
 {- Put a piece in the heap -}
-hsFree :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
+hsFree :: PackedString -> Heap -> VState -> VConfig -> IO (Heap, VState, [Command])
 hsFree spiece tree is ic = runVis (is, ic) (do let piece = read (packedStringToString spiece) :: (Addr, Length)
                                                cid   <- vsCreateCircle piece 100 100
                                                tree' <- fmap close $ attach cid piece (zipper tree) >>= promote
@@ -21,7 +21,7 @@ attach cid piece@(naddr, nlen) heap
         -- inspect the node at the cursor.
         case viewf heap of 
           -- attach the piece as the leaf of the tree
-          Leaf -> do vsPutText "Reaching a leaf."
+          Leaf -> do vsPutText "Insert the piece as a leaf."
                      whenJust (up heap >>= (return . viewf)) (\ (Node v _ _) -> do
                        vsConnect (_id v) cid)
                      vsStep
@@ -316,7 +316,7 @@ promote pos = case viewf pos of
                 Leaf -> do vsPutText "Reaching a leaf." 
                            vsStep
                            return pos
-                Node pivot _ _ -> vsPutText "" >> go pivot (root pos)
+                Node pivot _ _ -> go pivot (root pos)
     where
         -- decent from root to pos, and find the first position p where p's length < pos's length
         go pv cursor 
@@ -489,6 +489,7 @@ hsAlloc slen tree is ic = runVis (is, ic) (let inorder = toList (zipper tree)
                                     vsStep
                                     -- merge the left and right children, and replace the current visiting node.
                                     node <- merge (leftJust p) (rightJust p)
+                                    vsOpParent p (\ parent -> whenNode node (\ cv -> vsConnect (_id parent) (_id cv)))
                                     updateTree (close $ setf node p)
                            -- its length is greater enough, substract slen from it.
                            -- and demote the node if its length becomes smaller than its children.
@@ -509,8 +510,8 @@ merge t1@(Node v1 t11 t12) t2@(Node v2 t21 t22)
 --}
 
 merge pos1 pos2 = case (viewf pos1, viewf pos2) of
-                    (Leaf, t2)  -> do vsPutText "Reaching a leaf." >> return t2
-                    (t1, Leaf)  -> do vsPutText "Reaching a leaf." >> return t1
+                    (Leaf, t2)  -> do vsPutText "Reaching a leaf." >> vsStep >> return t2
+                    (t1, Leaf)  -> do vsPutText "Reaching a leaf." >> vsStep >> return t1
                     -- pick up the one with greater length as root
                     -- and merge one of its child with the other tree.
                     (t1@(Node v1 t11 _), t2@(Node v2 _ t22))
@@ -523,7 +524,7 @@ merge pos1 pos2 = case (viewf pos1, viewf pos2) of
                                                        vsDisconnectParent pos2
                                                        vsStep))
                                                    t12 <- merge (rightJust pos1) pos2
-                                                   whenNode t12 (\ v -> vsConnect (_id v1) (_id v))
+                                                   whenNode t12 (\ v -> vsConnect (_id v1) (_id v) >> vsStep)
                                                    return $ Node v1 t11 t12
                         -- the right one has bigger length,
                         -- merge the left child of the right one and the left one, as the new left child.
@@ -534,7 +535,7 @@ merge pos1 pos2 = case (viewf pos1, viewf pos2) of
                                                        vsDisconnectParent (leftJust pos2)
                                                        vsStep))
                                                    t21 <- merge pos1 (leftJust pos2)
-                                                   whenNode t21 (\ v -> vsConnect (_id v2) (_id v))
+                                                   whenNode t21 (\ v -> vsConnect (_id v2) (_id v) >> vsStep)
                                                    return $ Node v2 t21 t22
 {-- demote a node
 demote v Leaf Leaf = Node v Leaf Leaf
@@ -691,7 +692,7 @@ demote cursor = case viewf cursor of
                     --           v                      v2
                     --       /      \                 /    \
                     --      v1      v2       =>      v1   t22
-                    --     /  \    /  \             /  \          
+                    --     /  \    /  \             /  \
                     --    t11 t12 t21 t22         t11   v         
                     --                                 / \
                     --                               t12 t21
@@ -809,8 +810,8 @@ foreign export js "hsConfig" hsConfig :: Int -> Int -> Int -> Int ->
                                          PackedString -> PackedString -> PackedString -> VConfig
 foreign export js "hsCmds"   hsCmds   :: JsCollection -> [Command] -> IO ()
 foreign export js "hsLeaf"   hsLeaf   :: Heap
-foreign export js "hsFree"   hsFree   :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
-foreign export js "hsAlloc"  hsAlloc  :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
+foreign export js "hsFree"   hsFree   :: PackedString -> Heap -> VState -> VConfig -> IO (Heap, VState, [Command])
+foreign export js "hsAlloc"  hsAlloc  :: PackedString -> Heap -> VState -> VConfig -> IO (Heap, VState, [Command])
 
 hsConfig = C
 hsCmds obj cmds = mapM_ (\c -> jsPush obj (stringToJSString (show c))) cmds
