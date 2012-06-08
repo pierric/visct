@@ -5,3 +5,5 @@
 *.hi
 *.js
 *.html
+*.o
+*.pdf

@@ -1,16 +1,20 @@
 {-- visualization of cartesion tree algorithm -}
-module Main where
+module CT where
 
 import Vis
-import CartesionTree
+import CartesianTree
 
 {- Put a piece in the heap -}
 hsFree :: PackedString -> Heap -> VState -> VConfig -> (Heap, VState, [Command])
-hsFree spiece tree is ic = runVis (is, ic) (do let piece = read (packedStringToString spiece) :: (Addr, Length)
-                                               cid   <- vsCreateCircle piece 100 100
-                                               tree' <- fmap close $ attach cid piece (zipper tree) >>= promote
-                                               updateTree tree')
+hsFree spiece tree is ic = runVis (is, ic) (case reads (packedStringToString spiece) of
+                                              []            -> do vsPutText "Input format: \"(address, length)\""
+                                                                  command Step
+                                                                  return tree
+                                              ((piece,_):_) -> do cid   <- vsCreateCircle piece 100 100
+                                                                  tree' <- fmap close $ attach cid piece (zipper tree) >>= promote
+                                                                  updateTree tree')
 
+attach :: Int -> (Addr, Length) -> HeapZipper -> Vis HeapZipper
 attach cid piece@(naddr, nlen) heap
     -- the length of piece should be positive
     | nlen <= 0 = do vsPutText ("Invalid segment: " ++ show piece)
@@ -456,50 +460,55 @@ promote pos = case viewf pos of
                      return (close (setf lt' hookl), close (setf rt' hookr))
 
 {- get a piece from heap -}
-hsAlloc slen tree is ic = runVis (is, ic) (let inorder = toList (zipper tree)
-                                           in go inorder)
+hsAlloc slen tree is ic = runVis (is, ic) (case reads (packedStringToString slen) of
+                                             []          -> do vsPutText "Input format: Length"
+                                                               command Step
+                                                               return (Left tree)
+                                             ((len,_):_) -> delete len tree)
+
+delete len tree = go len $ toList (zipper tree)
     where -- inorder traverse the heap
           toList pos | isLeaf pos = []
                      | otherwise  = toList (leftJust pos) ++ [pos] ++ toList (rightJust pos)
 
-          len :: Length
-          len = read (packedStringToString slen) :: Int
-
           -- visit each node, find the first one with length greater than slen
+          go :: Length -> [HeapZipper] -> Vis (Either Heap ((Addr,Length), Heap))
           -- If we've visited all nodes, allocation fail.
-          go []     = do vsPutText $ "Allocation failed (length = " ++ show len ++ ")."
-                         vsStep
-                         return tree
+          go len []     = do vsPutText $ "Allocation failed (length = " ++ show len ++ ")."
+                             vsStep
+                             return (Left tree)
           -- visit a node.
-          go (p:ps) = do let Node pv lt rt = viewf p
-                         case compare (_len pv) len of
-                           -- its length is too small to satisfy the request
-                           LT -> do when (not $ null ps) (
-                                      vsWithHighlightCircle (_x pv, _y pv) (\hid -> 
-                                        let Node nv _ _ = viewf (head ps)
-                                        in vsMove hid (_x nv, _y nv)))
-                                    -- go to visit rest
-                                    go ps
-                           -- its length is exactly the same as request, this node will be removed.
-                           EQ -> do vsWithHighlightElem (_id pv) (do vsPutText "Matched. Deleting this node."
-                                                                     vsDisconnectParent   p
-                                                                     vsDisconnectChildren p
-                                                                     vsStep)
-                                    vsDelete (_id pv)
-                                    vsStep
-                                    -- merge the left and right children, and replace the current visiting node.
-                                    node <- merge (leftJust p) (rightJust p)
-                                    vsOpParent p (\ parent -> whenNode node (\ cv -> vsConnect (_id parent) (_id cv)))
-                                    updateTree (close $ setf node p)
-                           -- its length is greater enough, substract slen from it.
-                           -- and demote the node if its length becomes smaller than its children.
-                           GT -> do let newa = _addr pv + len
-                                        newl = _len pv - len
-                                    vsWithHighlightElem (_id pv) (do vsPutText ("Matched. Substract " ++ show len ++" from current node")
-                                                                     vsSetText (_id pv) (show (newa, newl))
-                                                                     vsPutText ("Demote the current node."))
-                                    p' <- demote $ setf (Node (pv{_addr = newa, _len = newl}) lt rt) p
-                                    updateTree (close p')
+          go len (p:ps) = do let Node pv lt rt = viewf p
+                             case compare (_len pv) len of
+                               -- its length is too small to satisfy the request
+                               LT -> do when (not $ null ps) (
+                                          vsWithHighlightCircle (_x pv, _y pv) (\hid -> 
+                                            let Node nv _ _ = viewf (head ps)
+                                            in vsMove hid (_x nv, _y nv)))
+                                        -- go to visit rest
+                                        go len ps
+                               -- its length is exactly the same as request, this node will be removed.
+                               EQ -> do vsWithHighlightElem (_id pv) (do vsPutText "Matched. Deleting this node."
+                                                                         vsDisconnectParent   p
+                                                                         vsDisconnectChildren p
+                                                                         vsStep)
+                                        vsDelete (_id pv)
+                                        vsStep
+                                        -- merge the left and right children, and replace the current visiting node.
+                                        node <- merge (leftJust p) (rightJust p)
+                                        vsOpParent p (\ parent -> whenNode node (\ cv -> vsConnect (_id parent) (_id cv)))
+                                        h'   <- updateTree (close $ setf node p)
+                                        return $ Right ((_addr pv, len), h')
+                               -- its length is greater enough, substract slen from it.
+                               -- and demote the node if its length becomes smaller than its children.
+                               GT -> do let newa = _addr pv + len
+                                            newl = _len pv - len
+                                        vsWithHighlightElem (_id pv) (do vsPutText ("Matched. Substract " ++ show len ++" from current node")
+                                                                         vsSetText (_id pv) (show (newa, newl))
+                                                                         vsPutText ("Demote the current node."))
+                                        p' <- demote $ setf (Node (pv{_addr = newa, _len = newl}) lt rt) p
+                                        h' <- updateTree (close p')
+                                        return $ Right ((_addr pv, len), h')
 
 {-- merge two tree
 merge Leaf t2 = t2
@@ -521,8 +530,7 @@ merge pos1 pos2 = case (viewf pos1, viewf pos2) of
                                                      vsWithHighlightElem (_id v2) (do
                                                        vsPutText ("length of the left > length of the right.")
                                                        vsDisconnectParent (rightJust pos1)
-                                                       vsDisconnectParent pos2
-                                                       vsStep))
+                                                       vsDisconnectParent pos2))
                                                    t12 <- merge (rightJust pos1) pos2
                                                    whenNode t12 (\ v -> vsConnect (_id v1) (_id v) >> vsStep)
                                                    return $ Node v1 t11 t12
@@ -532,8 +540,7 @@ merge pos1 pos2 = case (viewf pos1, viewf pos2) of
                                                      vsWithHighlightElem (_id v2) (do
                                                        vsPutText ("length of the left <= length of the right.")
                                                        vsDisconnectParent pos1
-                                                       vsDisconnectParent (leftJust pos2)
-                                                       vsStep))
+                                                       vsDisconnectParent (leftJust pos2)))
                                                    t21 <- merge pos1 (leftJust pos2)
                                                    whenNode t21 (\ v -> vsConnect (_id v2) (_id v) >> vsStep)
                                                    return $ Node v2 t21 t22
@@ -819,4 +826,3 @@ hsLeaf = Leaf
 hsPiece str = read (packedStringToString str) :: (Addr, Length)
 #endif
 
-main = return ()

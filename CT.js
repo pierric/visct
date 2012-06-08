@@ -111,13 +111,18 @@ CT.prototype.freeElement = function(insertedValue)
 	this.commands = new Array();	
     this.cmd("SetText", 0, "Inserting "+insertedValue);
 
-    res = hsFree(insertedValue, this.treeRoot,
-                 this.nextIndex, this.config);
-    this.treeRoot  = res[0];
-    this.nextIndex = res[1];
-    hsCmds(this.commands, res[2]);
-
-	this.cmd("SetText", 0, "");				
+    try
+    {
+        res = hsFree(insertedValue, this.treeRoot,
+                     this.nextIndex, this.config);
+        this.treeRoot  = res[0];
+        this.nextIndex = res[1];
+        hsCmds(this.commands, res[2]);
+    }
+    catch(err)
+    {
+        this.cmd("SetText", 0, "Exception: " + err.message);
+    }
 	return this.commands;
 }
 
@@ -137,14 +142,18 @@ CT.prototype.allocElement = function(requestValue)
 {
 	this.commands = new Array();	
 	
-    res = hsAlloc(requestValue, this.treeRoot,
-                  this.nextIndex, this.config);
-    this.treeRoot  = res[0];
-    this.nextIndex = res[1];
-
-    hsCmds(this.commands, res[2]);
-
-	this.cmd("SetText", 0, "");				
+    try
+    {
+        res = hsAlloc(requestValue, this.treeRoot,
+                      this.nextIndex, this.config);
+        this.treeRoot  = res[0];
+        this.nextIndex = res[1];
+        hsCmds(this.commands, res[2]);
+    }
+    catch(err)
+    {
+        this.cmd("SetText", 0, "Exception: " + err.message);
+    }
 	return this.commands;
 }
 

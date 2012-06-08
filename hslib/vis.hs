@@ -7,7 +7,7 @@ import Trans
 import Reader
 import Writer
 import State
-import CartesionTree
+import CartesianTree
 import Data.List(intersperse)
 
 type Addr   = Int
@@ -21,7 +21,7 @@ data Value = V {
     _len  :: Length
 } deriving Show
 
-type Heap = CartesionTree Value
+type Heap = CartesianTree Value
 type HeapZipper = Zipper  Value
 
 newtype Color = Color PackedString
@@ -77,10 +77,17 @@ runVis :: (VState, VConfig) -> Vis a -> (a, VState, [Command])
 runVis (is, ic) act = let ((a,w),s) = runReader (runStateT (runWriterT act) is) ic
                       in (a,s,w)
 #else
+{--
 type Vis = WriterT [Command] (StateT VState (ReaderT VConfig IO))
 runVis :: (VState, VConfig) -> Vis a -> IO (a, VState, [Command])
 runVis (is, ic) act = do ((a,w),s) <- runReaderT (runStateT (runWriterT act) is) ic
                          return (a,s,w)
+--}
+type Vis = WriterT [Command] (StateT VState (Reader VConfig))
+runVis :: (VState, VConfig) -> Vis a -> (a, VState, [Command])
+runVis (is, ic) act = let ((a,w),s) = runReader (runStateT (runWriterT act) is) ic
+                      in (a,s,w)
+
 #endif
 
 {--
@@ -141,7 +148,7 @@ vsWithLabel s (x,y) action = do n <- vsGetGrId
                                 action n    
                                 vsDelete n
 
-vsStep = command Step
+vsStep = command Step >> vsPutText "" 
 
 -- output a command in our working monad.
 command :: Command -> Vis () 
@@ -184,7 +191,7 @@ iconfig= C{
   _highlight_color_0 = "#ee", _highlight_color_1 = "#ee", _highlight_color_2 = "#ee"
 }
 vsPutText :: String -> Vis ()
-vsPutText s = do (lift . lift . lift) (putStrLn s)
+vsPutText s = do {--(lift . lift . lift) (putStrLn s) --}
                  command $ SetText 0 s
 #endif
 
